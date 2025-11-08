@@ -1,11 +1,19 @@
-import discord, os, datetime
+import discord, os
 from discord.ext.voice_recv.voice_client import VoiceRecvClient
 
 import openwakeword
 from oww_sink import AsyncOpenWakeWordSink
+from handlers import VoiceActivatedSoundboard, VoiceActivatedAudio, VoiceActivatedIncessantAudio, ManyVoiceActivated
 
-SOUNDBOARD_ID = 1363476761576210616
-MODEL = "hit_the_aw_button.tflite"
+AW_SOUNDBOARD_ID = 1363476761576210616
+SMOKE_CHIRP_AUDIO = "./audio/smokechirp.mp3"
+CARS_ON_FIRE_AUDIO = "./audio/cars_on_fire.mp3"
+
+HIT_THE_AW_BUTTON = "hit_the_aw_button"
+OI_FUCKWHIT = "oi_fuckwhit_v1"
+CARS_ON_FIRE = "cars_on_fire"
+
+# MCRIB, APOLGIZE
 
 intents = discord.Intents()
 intents.voice_states = True
@@ -34,24 +42,20 @@ async def join(interaction: discord.Interaction):
     except Exception as e:
         return await interaction.response.send_message(f"{e}")
 
-    soundboard = interaction.guild.get_soundboard_sound(SOUNDBOARD_ID)
-    last_time = datetime.datetime.min
-
+    handler = ManyVoiceActivated([
+        VoiceActivatedSoundboard(HIT_THE_AW_BUTTON, interaction, AW_SOUNDBOARD_ID),
+        VoiceActivatedAudio(CARS_ON_FIRE, voice_client, CARS_ON_FIRE_AUDIO),
+        VoiceActivatedIncessantAudio(OI_FUCKWHIT, CARS_ON_FIRE, voice_client, SMOKE_CHIRP_AUDIO),
+    ])
+    
     async def handle_predictions(user: discord.User, predictions: dict):
-        nonlocal last_time
-
-        current_time = datetime.datetime.now()
-        delta = current_time - last_time
-
-        if any(score > 0.5 for score in predictions.values()) and delta.total_seconds() > 1.0:
-            print(f"Wake word detected from {user.name}: {predictions}")
-            last_time = current_time
-            await channel.send_sound(soundboard)
-        elif any(score > 0.1 for score in predictions.values()):
+        if any(score > 0.1 for score in predictions.values()):
             print(f"Possible wake word detected from {user.name}: {predictions}")
 
+        await handler.handle(user, predictions)
+
     sink = AsyncOpenWakeWordSink(
-        wakeword_models=["./models/" + MODEL],
+        wakeword_models=[f"./models/{model}.tflite" for model in handler.get_models()],
         async_pred_cb=handle_predictions
     )
     voice_client.listen(sink)
